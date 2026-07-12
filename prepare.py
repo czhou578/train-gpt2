@@ -101,6 +101,35 @@ test = test.map(
 )
 
 # -----------------------------------------------------------------------------
+# Limit dataset size by number of tokens
+# -----------------------------------------------------------------------------
+
+MAX_TRAIN_TOKENS = 20_000
+MAX_VAL_TOKENS = 5_000
+MAX_TEST_TOKENS = 5_000
+
+def limit_tokens(dataset, max_tokens):
+    total = 0
+    selected = []
+
+    for i, length in enumerate(dataset["len"]):
+        if total + length > max_tokens:
+            break
+
+        selected.append(i)
+        total += length
+
+    return dataset.select(selected)
+
+train = limit_tokens(train, MAX_TRAIN_TOKENS)
+val = limit_tokens(val, MAX_VAL_TOKENS)
+test = limit_tokens(test, MAX_TEST_TOKENS)
+
+print(f"Reduced train tokens: {sum(train['len']):,}")
+print(f"Reduced val tokens: {sum(val['len']):,}")
+print(f"Reduced test tokens: {sum(test['len']):,}")
+
+# -----------------------------------------------------------------------------
 # Write binary files
 # -----------------------------------------------------------------------------
 
@@ -121,8 +150,8 @@ def write_bin(dataset, filename):
     print(f"Saved {filename}")
     print(f"Tokens: {len(arr):,}")
 
-write_bin(train, "train.bin")
-write_bin(val, "val.bin")
-write_bin(test, "test.bin")
+write_bin(train, "train_overfit.bin")
+write_bin(val, "val_overfit.bin")
+write_bin(test, "test_overfit.bin")
 
 print("Done!")
