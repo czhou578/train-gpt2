@@ -1,13 +1,20 @@
-from datasets import load_dataset
+from datasets import load_from_disk
 
-ds = load_dataset("eminorhan/tinystories", "10M_1")
-ds.save_to_disk("datasets/tinystories_10M_1") # ds = load_from_disk("datasets/tinystories_100M_1")
+ds = load_from_disk("datasets/tinystories_10M_1")
 
-# ds = load_dataset(
-#     "Salesforce/wikitext",
-#     "wikitext-103-raw-v1"
-# )
-# ds.save_to_disk("datasets/wikitext103")
+train = ds["train"]
+val = ds["validation"]
 
-# for example in ds["train"].select(range(5)):
-#     print(example["text"])
+# Create a 5% held-out test set from the training data
+train_test = train.train_test_split(
+    test_size=0.05,
+    seed=42,
+    shuffle=True,
+)
+
+train = train_test["train"]
+test = train_test["test"]
+
+print(len(train))
+print(len(val))
+print(len(test))
