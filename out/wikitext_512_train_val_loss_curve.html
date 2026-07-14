@@ -1,0 +1,32 @@
+<div style="display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 8px; font-size: 12px; color: var(--text-secondary);">
+  <span style="display: flex; align-items: center; gap: 4px;"><span style="width: 10px; height: 10px; border-radius: 2px; background: #2a78d6;"></span>Train loss</span>
+  <span style="display: flex; align-items: center; gap: 4px;"><span style="width: 10px; height: 10px; border-radius: 2px; background: #1baf7a;"></span>Val loss</span>
+</div>
+<div style="position: relative; width: 100%; height: 320px;">
+  <canvas id="lossChart512" role="img" aria-label="Line chart of training and validation loss over 2000 iterations for the block_size 512 run, both dropping from about 11 at iteration 0 to about 3.64-3.69 at iteration 2000">Loss drops from ~11.0 at iter 0 to ~3.64 (val) / 3.69 (train) at iter 2000.</canvas>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const iters512 = [0,50,100,150,200,250,300,350,400,450,500,550,600,650,700,750,800,850,900,950,1000,1050,1100,1150,1200,1250,1300,1350,1400,1450,1500,1550,1600,1650,1700,1750,1800,1850,1900,1950,2000];
+const trainLoss512 = [11.0319,6.9701,6.3250,5.8969,5.6657,5.4398,5.3687,5.2386,5.0262,4.9302,4.8325,4.7430,4.5176,4.4708,4.4222,4.4108,4.3710,4.1464,4.1006,4.1923,4.0914,4.0068,4.0219,3.9811,3.8769,3.8322,3.8961,3.7299,3.6696,3.8152,3.7383,3.7878,3.6884,3.7202,3.8173,3.7317,3.7552,3.6368,3.7153,3.6378,3.6946];
+const valLoss512 = [11.0250,6.9525,6.2291,5.8663,5.6347,5.4573,5.2672,5.1404,4.9698,4.8499,4.7263,4.6388,4.5323,4.4446,4.4146,4.3234,4.2420,4.1905,4.1370,4.0709,4.0361,3.9924,3.9632,3.9409,3.9032,3.8706,3.8591,3.8167,3.8092,3.7670,3.7617,3.7540,3.7294,3.7057,3.6907,3.6967,3.6827,3.6446,3.6692,3.6422,3.6447];
+new Chart(document.getElementById('lossChart512'), {
+  type: 'line',
+  data: {
+    labels: iters512,
+    datasets: [
+      { label: 'Train loss', data: trainLoss512, borderColor: '#2a78d6', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 0, tension: 0.15 },
+      { label: 'Val loss', data: valLoss512, borderColor: '#1baf7a', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 0, borderDash: [5,3], tension: 0.15 }
+    ]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { title: { display: true, text: 'iteration' }, grid: { display: false }, ticks: { maxTicksLimit: 10 } },
+      y: { title: { display: true, text: 'loss' }, grid: { color: '#e1e0d9' } }
+    }
+  }
+});
+</script>
