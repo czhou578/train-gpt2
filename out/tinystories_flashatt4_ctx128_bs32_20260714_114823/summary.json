@@ -1,0 +1,15 @@
+{
+  "best_val_loss": 3.1612930297851562,
+  "peak_mem_allocated_gb": 4.427830784,
+  "peak_mem_reserved_gb": 4.531945472,
+  "total_tokens": 1232828,
+  "wall_time_sec": 55.7314612865448,
+  "avg_tokens_per_sec": 38351.57996410372,
+  "model": "GPT2-small",
+  "dataset": "tinystories",
+  "block_size": 128,
+  "iterations": 300,
+  "final_val_loss": 3.1612930297851562,
+  "num_params": 123587328,
+  "tokens_per_iter": 4096
+}
