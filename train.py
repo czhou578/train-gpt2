@@ -34,7 +34,7 @@ wandb_run_name = 'gpt2' # 'run' + str(time.time())
 dataset = 'wikitext-103'
 gradient_accumulation_steps = 2 # used to simulate larger batch sizes
 batch_size = 64 # if gradient_accumulation_steps > 1, this is the micro-batch size
-block_size = 1024
+block_size = 256
 # model
 n_layer = 12
 n_head = 12
@@ -65,8 +65,8 @@ sample_max_new_tokens = 100
 sample_start = "\n"
 sample_temperature = 0.8
 sample_top_k = 200
-metrics_log_file = 'metrics_wikitext.jsonl' # structured, machine-parseable log (one JSON object per line)
-train_log_file = 'train_wikitext.log' # human-readable log, mirrors stdout
+metrics_log_file = 'metrics_wikitext_256.jsonl' # structured, machine-parseable log (one JSON object per line)
+train_log_file = 'train_wikitext_256.log' # human-readable log, mirrors stdout
 
 # -----------------------------------------------------------------------------
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str))]
