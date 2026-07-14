@@ -9,33 +9,31 @@ import math
 import pickle
 import logging
 import json
-from contextlib import nullcontext
-
 import numpy as np
 import torch
+from contextlib import nullcontext
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
-
 from model import GPTConfig, GPT
 
 # -----------------------------------------------------------------------------
 # default config values designed to train a gpt2 (124M) on OpenWebText
 # I/O
 out_dir = 'out'
-eval_interval = 2000
+eval_interval = 50
 log_interval = 1
-eval_iters = 200
+eval_iters = 30
 eval_only = False # if True, script exits right after the first eval
-always_save_checkpoint = True # if True, always save a checkpoint after each eval
+always_save_checkpoint = False # if True, always save a checkpoint after each eval
 init_from = 'scratch' # 'scratch' or 'resume' or 'gpt2*'
 # wandb logging
 wandb_log = False # disabled by default
 wandb_project = 'owt'
 wandb_run_name = 'gpt2' # 'run' + str(time.time())
 # data
-dataset = 'tinystories'
-gradient_accumulation_steps = 5 * 8 # used to simulate larger batch sizes
-batch_size = 12 # if gradient_accumulation_steps > 1, this is the micro-batch size
+dataset = 'wikitext-103'
+gradient_accumulation_steps = 2 # used to simulate larger batch sizes
+batch_size = 64 # if gradient_accumulation_steps > 1, this is the micro-batch size
 block_size = 1024
 # model
 n_layer = 12
@@ -45,7 +43,7 @@ dropout = 0.0 # for pretraining 0 is good, for finetuning try 0.1+
 bias = False # do we use bias inside LayerNorm and Linear layers?
 
 # adamw optimizer
-learning_rate = 6e-4 # max learning rate
+learning_rate = 3e-4 # max learning rate
 max_iters = 2000 # total number of training iterations
 weight_decay = 1e-1
 beta1 = 0.9
@@ -53,8 +51,8 @@ beta2 = 0.95
 grad_clip = 1.0 # clip gradients at this value, or disable if == 0.0
 # learning rate decay settings
 decay_lr = True # whether to decay the learning rate
-warmup_iters = 2000 # how many steps to warm up for
-lr_decay_iters = 600000 # should be ~= max_iters per Chinchilla
+warmup_iters = max(100, int(0.02 * max_iters))  # how many steps to warm up for
+lr_decay_iters = max_iters # should be ~= max_iters per Chinchilla
 min_lr = 6e-5 # minimum learning rate, should be ~= learning_rate/10 per Chinchilla
 # DDP settings
 backend = 'nccl' # 'nccl', 'gloo', etc.
@@ -67,8 +65,8 @@ sample_max_new_tokens = 100
 sample_start = "\n"
 sample_temperature = 0.8
 sample_top_k = 200
-metrics_log_file = 'metrics.jsonl' # structured, machine-parseable log (one JSON object per line)
-train_log_file = 'train_baseline.log' # human-readable log, mirrors stdout
+metrics_log_file = 'metrics_wikitext.jsonl' # structured, machine-parseable log (one JSON object per line)
+train_log_file = 'train_wikitext.log' # human-readable log, mirrors stdout
 
 # -----------------------------------------------------------------------------
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str))]
@@ -126,6 +124,7 @@ logger.info(f"tokens per iteration will be: {tokens_per_iter:,}")
 
 torch.manual_seed(1337 + seed_offset)
 torch.backends.cuda.matmul.allow_tf32 = True # allow tf32 on matmul
+torch.set_float32_matmul_precision("high")
 torch.backends.cudnn.allow_tf32 = True # allow tf32 on cudnn
 device_type = 'cuda' if 'cuda' in device else 'cpu' # for later use in torch.autocast
 # note: float16 data type will automatically use a GradScaler
@@ -238,20 +237,36 @@ if compile:
     model = torch.compile(model) # requires PyTorch 2.0
 
 # helps estimate an arbitrarily accurate loss over either split using many batches
+# @torch.no_grad()
+# def estimate_loss():
+#     out = {}
+#     model.eval()
+#     for split in ['train', 'val']:
+#         losses = torch.zeros(eval_iters)
+#         for k in range(eval_iters):
+#             X, Y = get_batch(split)
+#             with ctx:
+#                 logits, loss = model(X, Y)
+#             losses[k] = loss.item()
+#         out[split] = losses.mean()
+#     model.train()
+#     return out
+
 @torch.no_grad()
 def estimate_loss():
-    out = {}
     model.eval()
-    for split in ['train', 'val']:
-        losses = torch.zeros(eval_iters)
-        for k in range(eval_iters):
-            X, Y = get_batch(split)
-            with ctx:
-                logits, loss = model(X, Y)
-            losses[k] = loss.item()
-        out[split] = losses.mean()
+
+    losses = torch.zeros(eval_iters)
+
+    for k in range(eval_iters):
+        X, Y = get_batch("val")
+        with ctx:
+            _, loss = model(X, Y)
+        losses[k] = loss.item()
+
     model.train()
-    return out
+
+    return losses.mean()
 
 # learning rate decay scheduler (cosine with warmup)
 def get_lr(it):
@@ -287,12 +302,12 @@ while True:
 
     # evaluate the loss on train/val sets and write checkpoints
     if iter_num % eval_interval == 0 and master_process:
-        losses = estimate_loss()
+        val_loss = estimate_loss()
         mem = get_gpu_memory()
         gpu_util = get_gpu_util()
 
         logger.info(
-            f"step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, "
+            f"step {iter_num}: val loss {val_loss:.4f}, "
             f"gpu_util {gpu_util if gpu_util is not None else 'n/a'}%, "
             f"mem_allocated {mem.get('mem_allocated_gb', 0):.2f}GB"
         )
@@ -300,8 +315,7 @@ while True:
         log_metrics({
             'event': 'eval',
             'iter': iter_num,
-            'train_loss': losses['train'].item(),
-            'val_loss': losses['val'].item(),
+            'val_loss': val_loss.item(),
             'lr': lr,
             'gpu_util_pct': gpu_util,
             **mem,
@@ -310,14 +324,13 @@ while True:
         if wandb_log:
             wandb.log({
                 "iter": iter_num,
-                "train/loss": losses['train'],
-                "val/loss": losses['val'],
+                "val/loss": val_loss,
                 "lr": lr,
                 "mfu": running_mfu*100, # convert to percentage
             })
 
-        if losses['val'] < best_val_loss or always_save_checkpoint:
-            best_val_loss = losses['val']
+        if val_loss < best_val_loss or always_save_checkpoint:
+            best_val_loss = val_loss
             if iter_num > 0:
                 checkpoint = {
                     'model': raw_model.state_dict(),
