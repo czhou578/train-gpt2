@@ -358,3 +358,19 @@ tokens/sec
 GPU utilization
 VRAM usage
 wall-clock training time
+
+Option 3: Optimize nanoGPT
+
+This is a natural next step if you're interested in systems work.
+
+Implement and measure one optimization at a time:
+
+FlashAttention variants
+Fused optimizers
+Gradient checkpointing
+torch.compile tuning
+Different attention implementations
+Activation checkpointing
+Mixed precision variations
+
+Each optimization should be compared against your TinyStories baseline.
