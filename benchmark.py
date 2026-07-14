@@ -12,7 +12,7 @@ import subprocess
 import time
 from collections import deque
 from typing import Any, Dict, Optional
-
+import numpy as np
 import torch
 
 
@@ -59,7 +59,19 @@ class MetricsLogger:
         with open(self.config_path, "w") as f:
             json.dump(config, f, indent=2, default=str)
 
+    # In benchmark.py, replace the write_summary method with this version:
+
     def write_summary(self, **extra: Any) -> None:
+        def _to_python(obj):
+            """Convert tensors / numpy types to plain Python so json.dumps works."""
+            if torch.is_tensor(obj):
+                return obj.item() if obj.numel() == 1 else obj.tolist()
+            if isinstance(obj, (np.floating, np.integer)):
+                return obj.item()
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            return obj
+
         summary = {
             "best_val_loss": self._best_val_loss,
             "peak_mem_allocated_gb": self._peak_alloc_gb,
@@ -70,10 +82,15 @@ class MetricsLogger:
                 sum(self._tok_s_window) / len(self._tok_s_window)
                 if self._tok_s_window else None
             ),
-            **extra,
         }
+
+        # merge extra kwargs, converting any tensors
+        for k, v in extra.items():
+            summary[k] = _to_python(v)
+
         with open(self.summary_path, "w") as f:
             json.dump(summary, f, indent=2, default=str)
+
         self.log("summary", **summary)
 
     # ------------------------------------------------------------------

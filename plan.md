@@ -374,3 +374,383 @@ Activation checkpointing
 Mixed precision variations
 
 Each optimization should be compared against your TinyStories baseline.
+
+
+This is actually one of the best projects you can do on your DGX Spark. You're no longer asking "how do I train GPT-2?"—you're asking **"why is one implementation of GPT faster than another?"** That's systems engineering, and it's exactly how projects like nanoGPT, vLLM, TensorRT-LLM, and Megatron-LM evolve.
+
+I would treat this as a **controlled benchmark suite**, where **each optimization is a separate experiment**. Never stack multiple changes until you've measured each one independently.
+
+---
+
+# Overall project structure
+
+I would organize your repository like this:
+
+```text
+nanoGPT/
+├── baselines/
+│   ├── baseline.md
+│   ├── flash_sdpa.md
+│   ├── flash_v2.md
+│   ├── xformers.md
+│   ├── checkpointing.md
+│   ├── compile.md
+│   ├── fused_optimizer.md
+│   └── ...
+│
+├── configs/
+├── experiments/
+├── results/
+│   ├── baseline/
+│   ├── flash_sdpa/
+│   ├── flash_v2/
+│   ├── ...
+│
+└── scripts/
+```
+
+Every experiment should have
+
+* config
+* logs
+* checkpoint
+* throughput
+* GPU utilization
+* conclusion
+
+---
+
+# Phase 0 — Establish a baseline
+
+Before changing anything, record:
+
+| Metric           | Value |
+| ---------------- | ----- |
+| tokens/sec       |       |
+| iteration time   |       |
+| MFU              |       |
+| GPU utilization  |       |
+| VRAM             |       |
+| validation loss  |       |
+| final train loss |       |
+| power            |       |
+| compile time     |       |
+
+This baseline is your reference.
+
+---
+
+# Phase 1 — Understand FlashAttention
+
+Many people think FlashAttention is "a faster attention kernel."
+
+It isn't.
+
+It is an entirely different algorithm.
+
+Normal attention computes
+
+```
+QKᵀ
+
+↓
+
+Softmax
+
+↓
+
+SoftmaxV
+```
+
+while materializing the enormous
+
+```
+T × T
+```
+
+attention matrix.
+
+FlashAttention never stores that matrix.
+
+Instead it streams blocks through shared memory.
+
+Advantages
+
+* lower memory
+* fewer HBM accesses
+* higher occupancy
+* much better for long contexts
+
+---
+
+# Phase 2 — Determine your current implementation
+
+First determine what you're actually running.
+
+If you're using modern nanoGPT, you'll likely find something like
+
+```python
+F.scaled_dot_product_attention(...)
+```
+
+PyTorch automatically dispatches to
+
+* math kernel
+* memory efficient kernel
+* FlashAttention
+
+depending on
+
+* GPU
+* dtype
+* sequence length
+
+So your baseline may already be using FlashAttention.
+
+This is extremely important to determine first.
+
+---
+
+# Experiment A
+
+## Disable FlashAttention
+
+Force PyTorch to use the math kernel.
+
+Measure
+
+* tokens/sec
+* memory
+* MFU
+
+This gives
+
+```
+Math Attention
+```
+
+---
+
+# Experiment B
+
+Enable FlashAttention
+
+Now force
+
+```
+FlashAttention backend
+```
+
+Measure again.
+
+Now you have
+
+```
+Math
+↓
+
+Flash
+```
+
+comparison.
+
+---
+
+# Experiment C
+
+Memory Efficient Attention
+
+PyTorch has another backend.
+
+Compare
+
+```
+Math
+
+Memory Efficient
+
+Flash
+```
+
+---
+
+# Experiment D
+
+FlashAttention-2
+
+Install
+
+```
+flash-attn
+```
+
+Replace attention module.
+
+Measure
+
+* throughput
+* compile time
+* memory
+
+---
+
+# Experiment E
+
+Different sequence lengths
+
+Repeat
+
+```
+128
+256
+512
+1024
+2048
+```
+
+You'll notice
+
+FlashAttention becomes increasingly advantageous as sequence length grows.
+
+---
+
+# Phase 3 — Instrumentation
+
+For every experiment collect
+
+```
+iteration
+
+loss
+
+tokens/sec
+
+MFU
+
+VRAM
+
+GPU utilization
+
+step time
+```
+
+Also
+
+```
+torch.profiler
+
+nsys
+
+ncu
+```
+
+if you want GPU kernel analysis.
+
+---
+
+# Phase 4 — Visualize
+
+Create graphs.
+
+Example
+
+```
+Context Length
+
+128
+
+256
+
+512
+
+1024
+
+2048
+```
+
+vs
+
+```
+tokens/sec
+```
+
+Another
+
+```
+Memory
+```
+
+vs
+
+```
+Context Length
+```
+
+Another
+
+```
+MFU
+```
+
+vs
+
+```
+Attention Backend
+```
+
+---
+
+# Phase 5 — Read the FlashAttention paper
+
+While benchmarking, read
+
+**FlashAttention (2022)**
+
+Don't worry about every proof.
+
+Focus on
+
+* IO complexity
+* tiled softmax
+* SRAM vs HBM
+* online softmax
+
+Then
+
+**FlashAttention-2**
+
+Focus on
+
+* better parallelization
+* work partitioning
+* occupancy improvements
+
+---
+
+# Suggested implementation order
+
+I'd implement the attention variants in this order:
+
+1. **PyTorch SDPA (baseline)** — confirm exactly which backend is selected on your DGX Spark.
+2. **Force the math backend** — establish a true "no FlashAttention" baseline.
+3. **Force the FlashAttention backend** — measure the improvement relative to math.
+4. **Test the memory-efficient backend** — compare all three PyTorch SDPA options.
+5. **Integrate FlashAttention-2** — use the external `flash-attn` package and benchmark it against PyTorch's implementation.
+
+Only after you've finished those would I move on to fused optimizers, gradient checkpointing, and compile tuning.
+
+---
+
+# Why this makes an excellent systems project
+
+By the end of these experiments, you won't just know that "FlashAttention is faster." You'll be able to answer questions like:
+
+* How much faster is it on **your DGX Spark**?
+* At what sequence length does it become worthwhile?
+* How much VRAM does it save?
+* Does it change numerical stability or convergence?
+* How does PyTorch's built-in FlashAttention compare with FlashAttention-2?
+
+Those are the kinds of measurements that make for a strong engineering report or technical blog post, because they're grounded in reproducible experiments rather than anecdotal claims.
+
+This also sets up the rest of your optimization work: once you have a well-instrumented baseline and a repeatable benchmarking methodology, you can evaluate every subsequent optimization (fused optimizers, checkpointing, `torch.compile`, etc.) with the same rigor.

@@ -4,7 +4,8 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
-
+from torch.nn.attention import SDPBackend, sdpa_kernel
+from flash_attn.cute import flash_attn_func
 # -----------------------------------------------------------------------------
 
 class CausalSelfAttention(nn.Module):
@@ -35,6 +36,11 @@ class CausalSelfAttention(nn.Module):
         q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
         v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
         y = F.scaled_dot_product_attention(q, k, v, is_causal=True) # flash attention
+
+        # with sdpa_kernel(SDPBackend.MATH):
+        #     y = F.scaled_dot_product_attention(q, k, v, is_causal=True)
+        y = flash_attn_func(q, k, v, causal=True) # flash attention
+        
         y = y.transpose(1, 2).contiguous().view(B, T, C) # re-assemble all head outputs side by side
         # output projection
         y = self.c_proj(y)

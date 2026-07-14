@@ -21,7 +21,7 @@ from benchmark import MetricsLogger
 # default config values designed to train a gpt2 (124M) on OpenWebText / TinyStories
 # I/O
 out_dir = "out"
-eval_interval = 50
+eval_interval = 1000
 log_interval = 1
 eval_iters = 30
 eval_only = False
@@ -48,7 +48,7 @@ bias = False
 
 # adamw
 learning_rate = 6e-4
-max_iters = 2000
+max_iters = 300
 weight_decay = 1e-1
 beta1 = 0.9
 beta2 = 0.95
@@ -80,7 +80,7 @@ config = {k: globals()[k] for k in config_keys}
 
 # -----------------------------------------------------------------------------
 # Create a unique run directory so we never overwrite previous experiments
-run_name = f"{dataset}_gpt2s_bs{batch_size}_ctx{block_size}_{time.strftime('%Y%m%d_%H%M%S')}"
+run_name = f"{dataset}_flashatt4_kernel_gpt2s_bs{batch_size}_ctx{block_size}_{time.strftime('%Y%m%d_%H%M%S')}"
 run_dir = os.path.join(out_dir, run_name)
 os.makedirs(run_dir, exist_ok=True)
 
