@@ -1,3 +1,21 @@
+"""
+Minimal one-file GPT-2 training loop on the Tiny Shakespeare text.
+
+This file follows Andrej Karpathy's "Let's reproduce GPT-2" lecture. It keeps the
+model, the data loader, and the training loop in one place, so it is the quickest
+file to read if you are new to the project. The experiments in README.md use
+model.py and train.py instead.
+
+The script reads input.txt from the current directory and runs 50 optimizer steps.
+
+Extra requirement beyond requirements.txt:
+    flash-attn 4, which provides the `flash_attn.cute` module.
+
+CausalSelfAttention.forward calls both torch's scaled_dot_product_attention and
+flash_attn_func. The last call wins. Comment out the one you do not want when you
+compare the two kernels.
+"""
+
 import math
 import inspect
 from dataclasses import dataclass

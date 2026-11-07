@@ -1,7 +1,12 @@
-# benchmark.py
 """
-Lightweight metrics / benchmarking harness for nanoGPT-style training.
-Every experiment gets its own self-contained directory.
+Lightweight metrics harness for nanoGPT-style training runs.
+
+Every experiment gets its own directory with three files:
+    metrics.jsonl  one JSON record per event (environment, run_start, train_step, eval, ...)
+    config.json    the full run configuration
+    summary.json   best validation loss, peak memory, total tokens, wall time, throughput
+
+train_optimization.py uses this module. train.py has its own, simpler logger.
 """
 
 from __future__ import annotations
@@ -17,6 +22,14 @@ import torch
 
 
 class MetricsLogger:
+    """Write the structured records of one training run into `run_dir`.
+
+    GPU telemetry (utilization, power, temperature, clocks) comes from NVML through the
+    nvidia-ml-py package. Without that package the logger still records torch memory stats.
+
+    `window` is the number of recent steps that the rolling throughput average covers.
+    """
+
     def __init__(self, run_dir: str, window: int = 100):
         self.run_dir = run_dir
         os.makedirs(run_dir, exist_ok=True)
@@ -51,17 +64,18 @@ class MetricsLogger:
     # Core logging
     # ------------------------------------------------------------------
     def log(self, event: str, **kwargs: Any) -> None:
+        """Append one record to metrics.jsonl with a timestamp and the given event name."""
         record = {"timestamp": time.time(), "event": event, **kwargs}
         with open(self.metrics_path, "a") as f:
             f.write(json.dumps(record) + "\n")
 
     def write_config(self, config: Dict[str, Any]) -> None:
+        """Write the run configuration to config.json."""
         with open(self.config_path, "w") as f:
             json.dump(config, f, indent=2, default=str)
 
-    # In benchmark.py, replace the write_summary method with this version:
-
     def write_summary(self, **extra: Any) -> None:
+        """Write summary.json and log a `summary` record. `extra` fields are added as given."""
         def _to_python(obj):
             """Convert tensors / numpy types to plain Python so json.dumps works."""
             if torch.is_tensor(obj):
@@ -97,6 +111,7 @@ class MetricsLogger:
     # Convenience helpers
     # ------------------------------------------------------------------
     def log_environment(self, dtype: str, device: str) -> None:
+        """Log the torch, CUDA, cuDNN, and GPU versions and the current git commit."""
         info = {
             "torch": torch.__version__,
             "cuda": torch.version.cuda,
@@ -118,9 +133,11 @@ class MetricsLogger:
         self.log("environment", **info)
 
     def log_compile(self, compile_time_sec: float) -> None:
+        """Log how long torch.compile took."""
         self.log("compile", compile_time_sec=compile_time_sec)
 
     def log_run_start(self, config: Dict[str, Any], num_params: int) -> None:
+        """Write config.json and log a `run_start` record with the parameter count."""
         self.write_config(config)
         self.log("run_start", config=config, num_params=num_params)
 
@@ -175,6 +192,7 @@ class MetricsLogger:
         return stats
 
     def log_eval(self, iter_num: int, val_loss: float, lr: float) -> None:
+        """Log an `eval` record with the validation loss and the current GPU stats."""
         if val_loss < self._best_val_loss:
             self._best_val_loss = val_loss
         stats = self.get_gpu_stats()
@@ -187,6 +205,7 @@ class MetricsLogger:
         )
 
     def log_checkpoint(self, iter_num: int, best_val_loss: float) -> None:
+        """Log that a checkpoint was saved."""
         self.log("checkpoint", iter=iter_num, best_val_loss=best_val_loss)
 
     def log_train_step(
@@ -200,6 +219,7 @@ class MetricsLogger:
         mfu_pct: Optional[float] = None,
         grad_norm: Optional[float] = None,
     ) -> None:
+        """Log a `train_step` record. GPU stats are attached every 10 steps."""
         self._tok_s_window.append(tokens_per_sec)
         self._samples_s_window.append(samples_per_sec)
         self._total_tokens += int(tokens_per_sec * (time_ms / 1000.0))
@@ -225,4 +245,5 @@ class MetricsLogger:
         self.log("train_step", **record)
 
     def log_optimizer(self, iter_num: int, grad_norm: float) -> None:
+        """Log the gradient norm of one step."""
         self.log("optimizer", iter=iter_num, grad_norm=grad_norm)

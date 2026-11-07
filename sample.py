@@ -1,5 +1,17 @@
 """
-Sample from a trained model
+Sample text from a trained checkpoint or from pretrained GPT-2 weights.
+
+Edit the configuration block below, then run:
+
+    python sample.py
+
+`init_from = 'resume'` loads <out_dir>/ckpt.pt, the checkpoint that train.py writes.
+`init_from = 'gpt2'` (or gpt2-medium, gpt2-large, gpt2-xl) downloads the OpenAI
+weights through the transformers package.
+
+`start` is the prompt. Use "FILE:prompt.txt" to read the prompt from a file.
+
+This file started from nanoGPT's sample.py (Andrej Karpathy, MIT License).
 """
 import os
 import pickle

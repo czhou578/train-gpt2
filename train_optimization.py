@@ -1,6 +1,23 @@
 """
-To run on a single GPU, example:
-$ python train.py --batch_size=32 --compile=False
+Sweep the context length and record one self-contained run per value.
+
+Edit the configuration block below, then run:
+
+    python train_optimization.py
+
+For every value in `context_lengths` the script trains a fresh GPT-2 small model
+for `max_iters` iterations and writes a run directory:
+
+    out/<dataset>_flashatt4_ctx<block_size>_bs<batch_size>_<timestamp>/
+        config.json    the full configuration of the run
+        metrics.jsonl  structured records written by benchmark.MetricsLogger
+        summary.json   best validation loss, peak memory, throughput, wall time
+        train.log      human-readable log
+        ckpt.pt        the best checkpoint (ignored by git)
+
+The attention kernel is selected inside model.py. Change it there to compare
+kernels with the same sweep. The `flashatt4` part of the run name is a label.
+Change `run_name` below when you benchmark another kernel.
 """
 import os
 import time

@@ -1,6 +1,20 @@
 """
-To run on a single GPU, example:
-$ python train.py --batch_size=32 --compile=False
+Train a GPT-2 style model on one GPU and log structured metrics.
+
+The configuration is the block of module-level variables below. There is no
+command-line parser. Edit the values, then run:
+
+    python train.py
+
+The script writes three kinds of output into `out_dir`:
+    <train_log_file>    human-readable log, mirrors stdout
+    <metrics_log_file>  one JSON object per line: run_start, eval, checkpoint, train_step
+    ckpt.pt             the checkpoint with the best validation loss
+
+Each train_step record carries a timing breakdown (forward, backward, data load,
+optimizer) measured with CUDA events. README.md documents the full schema.
+
+This file started from nanoGPT's train.py (Andrej Karpathy, MIT License).
 """
 
 import os
@@ -111,8 +125,8 @@ def get_gpu_memory():
     }
 
 def get_gpu_util():
-    """Raw GPU utilization %, distinct from MFU (which is compute efficiency vs. peak FLOPs).
-    Requires nvidia-smi on PATH; returns None if unavailable."""
+    """Raw GPU utilization in percent, distinct from MFU (compute efficiency vs. peak FLOPs).
+    Uses torch.cuda.utilization(), which needs the nvidia-ml-py package. Returns None if unavailable."""
     if device_type != 'cuda':
         return None
     try:
@@ -236,22 +250,6 @@ if compile:
     unoptimized_model = model
     model = torch.compile(model) # requires PyTorch 2.0
 
-# helps estimate an arbitrarily accurate loss over either split using many batches
-# @torch.no_grad()
-# def estimate_loss():
-#     out = {}
-#     model.eval()
-#     for split in ['train', 'val']:
-#         losses = torch.zeros(eval_iters)
-#         for k in range(eval_iters):
-#             X, Y = get_batch(split)
-#             with ctx:
-#                 logits, loss = model(X, Y)
-#             losses[k] = loss.item()
-#         out[split] = losses.mean()
-#     model.train()
-#     return out
-
 @torch.no_grad()
 def estimate_loss():
     model.eval()
@@ -293,6 +291,15 @@ t0 = time.time()
 local_iter_num = 0 # number of iterations in the lifetime of this process
 raw_model = model # unwrap DDP container if needed
 running_mfu = -1.0
+
+# Step timing breakdown - CUDA events for async measurement (no sync penalty)
+n_micro = gradient_accumulation_steps
+fwd_events = [(torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)) for _ in range(n_micro)]
+bwd_events = [(torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)) for _ in range(n_micro)]
+load_events = [(torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)) for _ in range(n_micro)]
+opt_start = torch.cuda.Event(enable_timing=True)
+opt_end   = torch.cuda.Event(enable_timing=True)
+
 while True:
 
     # determine and set the learning rate for this iteration
@@ -348,15 +355,26 @@ while True:
 
     # forward backward update, with optional gradient accumulation to simulate larger batch size
     # and using the GradScaler if data type is float16
+    # timing: record events for forward / backward / data-loading per micro_step
     for micro_step in range(gradient_accumulation_steps):
+        fwd_events[micro_step][0].record()
         with ctx:
             logits, loss = model(X, Y)
             loss = loss / gradient_accumulation_steps # scale the loss to account for gradient accumulation
+        fwd_events[micro_step][1].record()
+
         # immediately async prefetch next batch while model is doing the forward pass on the GPU
+        load_events[micro_step][0].record()
         X, Y = get_batch('train')
+        load_events[micro_step][1].record()
+
         # backward pass, with gradient scaling if training in fp16
+        bwd_events[micro_step][0].record()
         scaler.scale(loss).backward()
+        bwd_events[micro_step][1].record()
+
     # clip the gradient
+    opt_start.record()
     if grad_clip != 0.0:
         scaler.unscale_(optimizer)
         torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
@@ -365,6 +383,14 @@ while True:
     scaler.update()
     # flush the gradients as soon as we can, no need for this memory anymore
     optimizer.zero_grad(set_to_none=True)
+    opt_end.record()
+
+    # synchronize once and read all event timings
+    torch.cuda.synchronize()
+    fwd_time_ms = sum(fwd_events[i][0].elapsed_time(fwd_events[i][1]) for i in range(n_micro))
+    bwd_time_ms = sum(bwd_events[i][0].elapsed_time(bwd_events[i][1]) for i in range(n_micro))
+    load_time_ms = sum(load_events[i][0].elapsed_time(load_events[i][1]) for i in range(n_micro))
+    opt_time_ms = opt_start.elapsed_time(opt_end)
 
     # timing and logging
     t1 = time.time()
@@ -380,18 +406,25 @@ while True:
             running_mfu = mfu if running_mfu == -1.0 else 0.9*running_mfu + 0.1*mfu
         logger.info(
             f"iter {iter_num}: loss {lossf:.4f}, time {dt*1000:.2f}ms, "
-            f"mfu {running_mfu*100:.2f}%, tok/s {tokens_per_sec:,.0f}"
+            f"mfu {running_mfu*100:.2f}%, tok/s {tokens_per_sec:,.0f}, "
+            f"breakdown fwd {fwd_time_ms:.1f}ms bwd {bwd_time_ms:.1f}ms "
+            f"load {load_time_ms:.1f}ms opt {opt_time_ms:.1f}ms"
         )    
-    
+        
         log_metrics({
             'event': 'train_step',
             'iter': iter_num,
             'loss': lossf,
             'time_ms': dt * 1000,
+            'fwd_time_ms': fwd_time_ms,
+            'bwd_time_ms': bwd_time_ms,
+            'load_time_ms': load_time_ms,
+            'opt_time_ms': opt_time_ms,
             'mfu_pct': running_mfu * 100 if running_mfu != -1.0 else None,
             'tokens_per_sec': tokens_per_sec,
             'lr': lr,
-        })    
+        })
+
     
     iter_num += 1
     local_iter_num += 1
