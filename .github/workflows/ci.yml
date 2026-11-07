@@ -1,0 +1,42 @@
+# Continuous integration.
+#
+# The job compiles every Python file and runs the CPU smoke tests in tests/.
+# It installs the CPU build of PyTorch, so it needs no GPU runner.
+# The Dependabot auto-merge workflow reuses this job through `workflow_call`.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Smoke test (CPU)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - name: Install the CPU build of PyTorch
+        run: |
+          TORCH_VERSION="$(sed -n 's/^torch==\(.*\)$/\1/p' requirements.txt)"
+          pip install "torch==${TORCH_VERSION}" --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install the remaining dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Compile all Python files
+        run: python -m compileall -q *.py tests
+
+      - name: Run the smoke tests
+        run: python -m pytest -q
