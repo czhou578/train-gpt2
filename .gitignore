@@ -1,3 +1,26 @@
-/datasets
-/data
-/out/*.pt
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Raw and tokenized datasets. Rebuild them with download_datasets.py and prepare.py.
+/datasets/
+/data/
+
+# Model checkpoints
+*.pt
+
+# Profiler output
+*.qdrep
+*.nsys-rep
+*.ncu-rep
+profile_trace.json
+
+# Editor and tool state
+.claude/settings.local.json
+.vscode/
+.idea/
+.DS_Store
