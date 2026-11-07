@@ -1,0 +1,59 @@
+# Merge Dependabot pull requests automatically.
+#
+# Policy
+#   1. The pull request must come from dependabot[bot] on this repository.
+#   2. The CPU smoke test (ci.yml) must pass inside this workflow run.
+#   3. Patch and minor version updates merge automatically. Security fixes almost
+#      always ship as a patch or a minor release, so they merge without manual work.
+#   4. Major version updates stay open for a human review. To merge them as well,
+#      delete the `if:` condition on the "Merge patch and minor updates" step.
+#
+# Requirements
+#   - "Allow auto-merge" is enabled in the repository settings.
+#   - Workflows that Dependabot triggers get a read-only GITHUB_TOKEN. The
+#     `permissions` block below raises it to the two scopes that `gh pr merge` needs.
+#
+# Note on the fallback
+#   Without a branch protection rule, nothing blocks an immediate merge, and
+#   `gh pr merge --auto` can refuse to arm auto-merge. The step then performs a
+#   direct squash merge. The smoke test has already passed at that point.
+name: Dependabot auto-merge
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  test:
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.repository == 'czhou578/train-gpt2'
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  merge:
+    needs: test
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.repository == 'czhou578/train-gpt2'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v3
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Merge patch and minor updates
+        if: >-
+          steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+          steps.metadata.outputs.update-type == 'version-update:semver-minor'
+        run: gh pr merge --auto --squash "$PR_URL" || gh pr merge --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Leave major updates for review
+        if: steps.metadata.outputs.update-type == 'version-update:semver-major'
+        run: echo "Major version update. Review and merge this pull request by hand."

@@ -1,0 +1,35 @@
+# Dependabot configuration.
+#
+# Version updates: Dependabot checks the Python requirements and the GitHub Actions
+# versions once a week and opens pull requests. Minor and patch bumps arrive grouped
+# in one pull request per ecosystem. Major bumps arrive one per dependency.
+#
+# Security updates: these are enabled in the repository settings
+# (Settings > Code security > Dependabot security updates) and need no entry here.
+#
+# The workflow .github/workflows/dependabot-auto-merge.yml merges the resulting
+# pull requests automatically when the smoke test passes.
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      python-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      actions-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
