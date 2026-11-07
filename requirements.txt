@@ -9,7 +9,7 @@ numpy==2.5.1
 tiktoken==0.13.0
 
 # Data preparation: download_datasets.py and prepare.py
-datasets==5.0.0
+datasets==5.0.1
 
 # GPU telemetry in benchmark.py and train.py. Both fall back to torch memory stats without it.
 nvidia-ml-py==13.610.43
