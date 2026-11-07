@@ -1,3 +1,7 @@
+> **About this file.** These are the original planning notes of the project: the roadmap,
+> the experiment matrix, working notes, and sample generations from early runs. The notes
+> are kept in their original form. [README.md](../README.md) describes the current state.
+
 # GPT-2 Reproduction Roadmap on a Single DGX Spark
 
 ## Goals
