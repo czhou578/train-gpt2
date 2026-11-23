@@ -5,7 +5,7 @@
 #   pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cu130
 # See README.md, section "Setup", for the CPU-only variant and optional packages.
 torch==2.15.0
-numpy==2.5.4
+numpy==2.5.5
 tiktoken==0.14.0
 
 # Data preparation: download_datasets.py and prepare.py
